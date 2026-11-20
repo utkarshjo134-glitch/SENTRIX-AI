@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SENTRIX AI</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1423;--panel:#142238;--line:#2a3d58;--cyan:#35c9dc;--muted:#9aabc2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#edf5ff;font:15px Arial,sans-serif}
+header{padding:17px 5%;background:#101d30;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.logo{background:linear-gradient(135deg,#35c9dc,#3978f6);color:#071321;font-size:23px;font-weight:bold;padding:10px 14px;border-radius:12px}
+header b{letter-spacing:2px;font-size:18px}header span{color:var(--cyan)}#connection{margin-left:auto;color:var(--muted);font-size:12px}
+main{max-width:1100px;width:92%;margin:35px auto}.panel,.tile,.stat{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:20px}
+.login{max-width:480px;margin:7vh auto}h1{font-size:30px;margin:8px 0}h2{font-size:19px}p,.muted{color:var(--muted);line-height:1.5}
+label{display:block;margin:15px 0 7px;color:#cbd8e8}input,select{width:100%;padding:13px;border:1px solid var(--line);border-radius:9px;background:#091321;color:white}
+button{padding:12px 17px;border:0;border-radius:9px;font-weight:bold;cursor:pointer;margin-top:16px}
+.primary{background:var(--cyan);color:#061421}.secondary{background:#263a55;color:white}
+button:disabled{opacity:.5} .hidden{display:none!important}.error{color:#ff858c;min-height:18px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0}
+.stat small{display:block;color:var(--muted)}.stat strong{display:block;font-size:25px;margin-top:8px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tile{padding:12px;min-width:0}.tile video{width:100%;aspect-ratio:16/10;object-fit:cover;background:#050a12;border-radius:9px}
+.tile h3{font-size:14px;margin:4px 0 10px}.empty{grid-column:1/-1;text-align:center;padding:30px;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
+#localVideo{width:100%;max-height:60vh;background:#050a12;border-radius:12px}
+.alert{padding:11px 3px;border-bottom:1px solid var(--line);font-size:13px}.alert small{display:block;color:var(--muted);margin-top:4px}
+footer{text-align:center;color:#71839b;padding:30px;font-size:12px}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){main{margin:22px auto}.grid{grid-template-columns:1fr}.stats{gap:7px}.stat{padding:12px}.stat strong{font-size:20px}.stat small{font-size:10px}h1{font-size:25px}}
+</style>
+</head>
+<body>
+<header><div class="logo">S</div><div><b>SENTRIX <span>AI</span></b><div class="muted" style="font-size:10px">MULTI-DEVICE CAMERA DASHBOARD</div></div><div id="connection">Not connected</div></header>
+<main>
+<section id="login" class="panel login">
+ <div style="color:var(--cyan);font-size:11px;letter-spacing:2px">SMART CAMPUS MONITORING</div>
+ <h1>Connect your device</h1><p>Use this same website on your phones, tablets and laptop.</p>
+ <form id="loginForm">
+  <label>Device role</label><select id="role"><option value="camera">Camera device — sends video</option><option value="monitor">Monitor dashboard — views cameras</option></select>
+  <div id="cameraSelect"><label>Camera name</label><select id="cameraId"><option>camera1</option><option>camera2</option><option>camera3</option><option>camera4</option><option>camera5</option><option>camera6</option><option>camera7</option><option>camera8</option><option>camera9</option><option>camera10</option></select></div>
+  <label>Password</label><input id="password" type="password" value="demo123" required>
+  <button class="primary" type="submit">Connect</button><div id="error" class="error"></div>
+ </form><p style="font-size:12px">Demo password: demo123</p>
+</section>
+
+<section id="cameraPage" class="hidden">
+ <div class="row"><div><h1 id="cameraHeading">Camera</h1><p>Press Start camera and allow camera permission.</p></div><button class="secondary" onclick="logout()">Disconnect</button></div>
+ <div class="panel"><video id="localVideo" autoplay muted playsinline></video><br>
+ <button class="primary" id="start">Start camera</button> <button class="secondary" id="stop" disabled>Stop camera</button><p id="cameraStatus">Camera is off.</p></div>
+</section>
+
+<section id="monitorPage" class="hidden">
+ <div class="row"><div><h1>Live camera dashboard</h1><p>Camera devices connected to this room appear below.</p></div><button class="secondary" onclick="logout()">Disconnect</button></div>
+ <div class="stats"><div class="stat"><small>CAMERAS ONLINE</small><strong id="count">0</strong></div><div class="stat"><small>ALERTS</small><strong id="alertsCount">0</strong></div><div class="stat"><small>ROOM</small><strong>SENTRIX</strong></div></div>
+ <h2>Camera feeds</h2><div id="feeds" class="grid"><div class="empty">Waiting for camera devices to connect…</div></div>
+ <h2 style="margin-top:30px">Recent notifications</h2><div class="panel" id="alerts"><p class="muted">No notifications yet.</p></div>
+</section>
+</main><footer>SENTRIX AI · Educational prototype</footer>
+<script>
+const $=id=>document.getElementById(id);
+let ws=null,role=null,camName=null,stream=null;
+const pcs=new Map(),monitors=new Set(),remote=new Map();
+const rtc={iceServers:[{urls:"stun:stun.l.google.com:19302"}]};
+function show(id){["login","cameraPage","monitorPage"].forEach(x=>$(x).classList.add("hidden"));$(id).classList.remove("hidden")}
+function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function signal(to,payload){send({type:"signal",target:to,payload})}
+function addAlert(camera,message,time){$("alertsCount").textContent=+$("alertsCount").textContent+1;let p=$("alerts").querySelector("p");if(p)p.remove();let d=document.createElement("div");d.className="alert";let b=document.createElement("b");b.textContent=camera+" — Motion alert";let t=document.createElement("div");t.textContent=message;let s=document.createElement("small");s.textContent=new Date(time).toLocaleString();d.append(b,t,s);$("alerts").prepend(d)}
+function makePeer(id,cameraSide){
+ const pc=new RTCPeerConnection(rtc);pcs.set(id,pc);
+ pc.onicecandidate=e=>{if(e.candidate)signal(id,{kind:"candidate",candidate:e.candidate})};
+ if(cameraSide&&stream)stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+ if(!cameraSide)pc.ontrack=e=>attachVideo(id,e.streams[0]);
+ pc.onconnectionstatechange=()=>{if(["failed","closed"].includes(pc.connectionState))removePeer(id)};
+ return pc;
+}
+async function startOffer(id){
+ if(!stream||pcs.has(id))return;
+ const pc=makePeer(id,true);const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+ signal(id,{kind:"offer",description:pc.localDescription});
+}
+async function onSignal(from,p){
+ try{
+  if(p.kind==="offer"&&role==="monitor"){
+   removePeer(from);const pc=makePeer(from,false);await pc.setRemoteDescription(p.description);
+   const answer=await pc.createAnswer();await pc.setLocalDescription(answer);signal(from,{kind:"answer",description:pc.localDescription});
+  }else if(p.kind==="answer"&&role==="camera"){
+   const pc=pcs.get(from);if(pc)await pc.setRemoteDescription(p.description);
+  }else if(p.kind==="candidate"){
+   const pc=pcs.get(from);if(pc&&pc.remoteDescription)await pc.addIceCandidate(p.candidate);
+  }
+ }catch(e){console.warn("WebRTC signal:",e)}
+}
+function renderRoster(cameras){
+ $("count").textContent=cameras.length;
+ const ids=new Set(cameras.map(c=>c.id));
+ document.querySelectorAll(".tile[data-peer]").forEach(el=>{if(!ids.has(el.dataset.peer))el.remove()});
+ const empty=$("feeds").querySelector(".empty");if(cameras.length&&empty)empty.remove();
+ cameras.forEach(c=>{
+  if($("feeds").querySelector('[data-peer="'+c.id+'"]'))return;
+  const tile=document.createElement("div");tile.className="tile";tile.dataset.peer=c.id;
+  const h=document.createElement("h3");h.textContent=c.cameraId;
+  const v=document.createElement("video");v.autoplay=true;v.playsInline=true;v.muted=true;
+  tile.append(h,v);$("feeds").append(tile);if(remote.has(c.id))attachVideo(c.id,remote.get(c.id));
+ });
+ if(!cameras.length&&!$("feeds").querySelector(".empty")){let e=document.createElement("div");e.className="empty";e.textContent="Waiting for camera devices to connect…";$("feeds").append(e)}
+}
+function attachVideo(id,s){remote.set(id,s);const v=$("feeds").querySelector('[data-peer="'+id+'"] video');if(v){v.srcObject=s;v.play().catch(()=>{})}}
+function removePeer(id){const pc=pcs.get(id);if(pc)pc.close();pcs.delete(id);remote.delete(id);const el=$("feeds").querySelector('[data-peer="'+id+'"]');if(el)el.remove()}
+function connect(){
+ const protocol=location.protocol==="https:"?"wss:":"ws:";
+ ws=new WebSocket(protocol+"//"+location.host);
+ ws.onopen=()=>send({type:"register",role,cameraId:camName,password:$("password").value,room:"sentrix"});
+ ws.onmessage=async ev=>{
+  const m=JSON.parse(ev.data);
+  if(m.type==="error"){$("error").textContent=m.message;return}
+  if(m.type==="registered"){ $("connection").textContent="Connected";if(role==="camera"){ $("cameraHeading").textContent=camName;show("cameraPage")}else show("monitorPage");}
+  if(m.type==="roster"&&role==="monitor")renderRoster(m.cameras);
+  if(m.type==="monitor-ready"&&role==="camera"){monitors.add(m.target);startOffer(m.target)}
+  if(m.type==="signal")await onSignal(m.from,m.payload);
+  if(m.type==="peer-left")removePeer(m.id);
+  if(m.type==="alert"&&role==="monitor")addAlert(m.cameraId,m.message,m.time);
+ };
+ ws.onclose=()=>{$("connection").textContent="Disconnected"};
+ ws.onerror=()=>{$("error").textContent="Cannot connect to server."};
+}
+$("role").onchange=()=> $("cameraSelect").classList.toggle("hidden",$("role").value!=="camera");
+$("loginForm").onsubmit=e=>{e.preventDefault();$("error").textContent="";role=$("role").value;camName=$("cameraId").value;if(ws)ws.close();connect()};
+$("start").onclick=async()=>{
+ if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){$("cameraStatus").textContent="Camera requires a secure HTTPS website. Publish this app first.";return}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});$("localVideo").srcObject=stream;$("start").disabled=true;$("stop").disabled=false;$("cameraStatus").textContent="Camera is live. Keep this page open.";for(const id of monitors)startOffer(id);beginMotionDetection()}
+ catch(e){$("cameraStatus").textContent="Camera error: "+e.message}
+};
+$("stop").onclick=stopCamera;
+function stopCamera(){if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$("localVideo").srcObject=null;$("start").disabled=false;$("stop").disabled=true;$("cameraStatus").textContent="Camera is off";pcs.forEach(pc=>pc.close());pcs.clear();monitors.clear()}
+function beginMotionDetection(){
+ const c=document.createElement("canvas"),ctx=c.getContext("2d",{willReadFrequently:true});let prev=null,streak=0,last=0;
+ const v=$("localVideo");const timer=setInterval(()=>{
+  if(!stream){clearInterval(timer);return}if(v.readyState<2)return;
+  c.width=24;c.height=18;ctx.drawImage(v,0,0,24,18);const data=ctx.getImageData(0,0,24,18).data;
+  if(prev){let changed=0;for(let i=0;i<data.length;i+=4)if(Math.abs(data[i]-prev[i])+Math.abs(data[i+1]-prev[i+1])+Math.abs(data[i+2]-prev[i+2])>90)changed++;
+   const score=changed/(24*18)*100;streak=score>25?streak+1:0;
+   if(streak>=3&&Date.now()-last>10000){last=Date.now();streak=0;send({type:"alert",message:"Motion estimate: "+score.toFixed(0)+"%. This is not AI violence detection."})}
+  }prev=new Uint8ClampedArray(data)
+ },800);
+}
+function logout(){stopCamera();pcs.forEach(pc=>pc.close());pcs.clear();remote.clear();monitors.clear();if(ws)ws.close();ws=null;role=null;$("connection").textContent="Not connected";show("login")}
+</script>
+</body></html>
